@@ -7,3 +7,8 @@ CLAUDE.local.md
 .DS_Store
 .vscode/
 .idea/
+
+.venv/
+__pycache__/
+bench/samples/
+bench/results/

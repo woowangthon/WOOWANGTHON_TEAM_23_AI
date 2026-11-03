@@ -1,0 +1,8 @@
+[project]
+name = "woowangthon-team-23-ai"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+    "httpx>=0.28.1",
+    "pypdf>=6.21.4",
+]
