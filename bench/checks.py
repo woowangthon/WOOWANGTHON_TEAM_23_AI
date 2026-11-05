@@ -47,6 +47,8 @@ def check_question(q: dict, source: str) -> list[str]:
         if text.rstrip().endswith("?") or INTERROGATIVE.search(text):
             issues.append("ox_not_statement")
     elif q.get("type") == "short":
+        if not answer.strip():
+            issues.append("answer_missing")
         accepted = q.get("accepted")
         if not isinstance(accepted, list) or not any(str(a).strip() for a in accepted):
             issues.append("short_no_accepted")
