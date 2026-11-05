@@ -18,7 +18,8 @@ OLLAMA_BASE_URL = "http://localhost:11434/v1"
 EXTRA_BODY = {"qwen3.5": {"reasoning_effort": "none"}}  # 모델 이름이 이 접두사로 시작하면 적용
 ISSUES = [
     "evidence_missing", "evidence_edited", "evidence_not_in_source", "answer_leak", "refers_to_source", "ox_answer_invalid",
-    "ox_not_statement", "answer_missing", "short_no_accepted", "answer_in_question", "unknown_type",
+    "ox_not_statement", "answer_missing", "short_answer_ox", "short_answer_sentence", "short_not_question",
+    "short_no_accepted", "answer_in_question", "unknown_type",
 ]
 
 

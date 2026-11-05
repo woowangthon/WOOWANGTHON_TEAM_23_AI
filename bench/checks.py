@@ -5,7 +5,10 @@ EVIDENCE_EDITED_BELOW = 1.0
 EVIDENCE_FABRICATED_BELOW = 0.8
 SOURCE_REFERENCE = re.compile(r"자료에서|본문에서|본문에|언급된|위 글|다음 글|위 내용|제시된")
 LEAK = re.compile(r"\((?:O|X|정답)\)|정답\s*[:：]")
-INTERROGATIVE = re.compile(r"무엇|누구|어느|몇|어떤|왜")
+INTERROGATIVE = re.compile(r"무엇|누구|어느|몇|어떤|왜|무슨|얼마|언제|어디")
+# 오버레이 카드에서 입력할 수 있는 길이. 넘거나 문장으로 끝나면 단답이 아님
+SHORT_ANSWER_MAX = 20
+SENTENCE_END = re.compile(r"다\.?$")
 
 
 def squash(text: str) -> str:
@@ -49,6 +52,12 @@ def check_question(q: dict, source: str) -> list[str]:
     elif q.get("type") == "short":
         if not answer.strip():
             issues.append("answer_missing")
+        elif answer.strip() in ("O", "X", "참", "거짓"):
+            issues.append("short_answer_ox")
+        elif len(squash(answer)) > SHORT_ANSWER_MAX or SENTENCE_END.search(answer.strip()):
+            issues.append("short_answer_sentence")
+        if not (text.rstrip().endswith("?") or INTERROGATIVE.search(text)):
+            issues.append("short_not_question")
         accepted = q.get("accepted")
         if not isinstance(accepted, list) or not any(str(a).strip() for a in accepted):
             issues.append("short_no_accepted")
