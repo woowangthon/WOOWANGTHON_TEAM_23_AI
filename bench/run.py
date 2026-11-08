@@ -18,7 +18,8 @@ OLLAMA_BASE_URL = "http://localhost:11434/v1"
 EXTRA_BODY = {"qwen3.5": {"reasoning_effort": "none"}}  # 모델 이름이 이 접두사로 시작하면 적용
 ISSUES = [
     "evidence_missing", "evidence_edited", "evidence_not_in_source", "answer_leak", "refers_to_source", "ox_answer_invalid",
-    "ox_not_statement", "short_no_accepted", "answer_in_question", "unknown_type",
+    "ox_not_statement", "answer_missing", "short_answer_ox", "short_answer_sentence", "short_not_question",
+    "short_no_accepted", "answer_in_question", "unknown_type",
 ]
 
 
@@ -27,7 +28,10 @@ def extra_body_for(model: str) -> dict:
 
 
 def chunks(pdf: Path, count: int) -> list[str]:
-    text = "\n".join((page.extract_text() or "") for page in PdfReader(pdf).pages)
+    if pdf.suffix == ".txt":
+        text = pdf.read_text(encoding="utf-8")
+    else:
+        text = "\n".join((page.extract_text() or "") for page in PdfReader(pdf).pages)
     body = text[: int(len(text) * 0.7)]  # 뒤쪽은 각주·참고문헌이라 제외
     pieces = [body[i : i + CHUNK_CHARS] for i in range(0, len(body), CHUNK_CHARS)]
     pieces = [p for p in pieces if len(p) > CHUNK_CHARS // 2]
@@ -37,8 +41,8 @@ def chunks(pdf: Path, count: int) -> list[str]:
     return [pieces[int(i * step)] for i in range(count)]
 
 
-def run_model(model: str, samples: list[tuple[str, int, str]]) -> tuple[list[dict], list[dict]]:
-    provider = Provider(name=model, base_url=OLLAMA_BASE_URL, model=model, extra_body=extra_body_for(model))
+def run_model(model: str, samples: list[tuple[str, int, str]], base_url: str = OLLAMA_BASE_URL) -> tuple[list[dict], list[dict]]:
+    provider = Provider(name=model, base_url=base_url, model=model, extra_body=extra_body_for(model))
     calls, questions = [], []
     for pdf, index, source in samples:
         prompt = QUESTION_PROMPT + source
@@ -128,17 +132,22 @@ def main() -> None:
     parser.add_argument("--per-pdf", type=int, default=10)
     parser.add_argument("--review", type=int, default=24)
     parser.add_argument("--out", default="bench/results")
+    # OpenAI 호환 서버 주소. 기본은 Ollama
+    parser.add_argument("--base-url", default=OLLAMA_BASE_URL)
     args = parser.parse_args()
 
-    pdfs = sorted(Path(args.pdf_dir).glob("*.pdf"))
+    pdfs = sorted(p for p in Path(args.pdf_dir).iterdir() if p.suffix in (".pdf", ".txt"))
     samples = [(pdf.stem, i, source) for pdf in pdfs for i, source in enumerate(chunks(pdf, args.per_pdf))]
     print(f"조각 {len(samples)}개, 모델 {len(args.models)}개", flush=True)
 
     out = Path(args.out) / time.strftime("%Y%m%d-%H%M%S")
     out.mkdir(parents=True)
     all_calls, all_questions = [], []
-    for model in args.models:
-        calls, questions = run_model(model, samples)
+    # "모델@주소"로 모델마다 다른 서버를 쓸 수 있음. 예: qwen3.5:9b other-model@http://localhost:8081/v1
+    specs = [m.partition("@") for m in args.models]
+    models = [model for model, _, _ in specs]
+    for model, _, url in specs:
+        calls, questions = run_model(model, samples, url or args.base_url)
         all_calls += calls
         all_questions += questions
         print(f"{model}: 호출 {len(calls)}, 문제 {len(questions)}", flush=True)
@@ -146,7 +155,7 @@ def main() -> None:
     with open(out / "questions.jsonl", "w", encoding="utf-8") as f:
         for q in all_questions:
             f.write(json.dumps(q, ensure_ascii=False) + "\n")
-    summary = summarize(args.models, all_calls, all_questions)
+    summary = summarize(models, all_calls, all_questions)
     (out / "summary.md").write_text(summary + "\n", encoding="utf-8")
     write_review(all_questions, args.review, out)
     print(summary)
