@@ -6,8 +6,8 @@ EVIDENCE_FABRICATED_BELOW = 0.8
 SOURCE_REFERENCE = re.compile(r"자료에서|본문에서|본문에|언급된|위 글|다음 글|위 내용|제시된")
 LEAK = re.compile(r"\((?:O|X|정답)\)|정답\s*[:：]")
 INTERROGATIVE = re.compile(r"무엇|누구|어느|몇|어떤|왜|무슨|얼마|언제|어디")
-# 오버레이 카드에서 입력할 수 있는 길이. 넘거나 문장으로 끝나면 단답이 아님
-SHORT_ANSWER_MAX = 20
+# 단답은 명사 하나만 허용함. 오버레이 카드에서 짧게 입력하고 허용 답안과 글자로만 비교하기 위함
+SHORT_ANSWER_MAX = 10
 SENTENCE_END = re.compile(r"다\.?$")
 
 

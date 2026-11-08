@@ -11,7 +11,7 @@ from pypdf import PdfReader
 
 from app.llm import LLMError, Provider, chat_json
 from app.prompts import QUESTION_PROMPT
-from bench.checks import check_question
+from app.checks import check_question
 
 CHUNK_CHARS = 2000
 OLLAMA_BASE_URL = "http://localhost:11434/v1"
