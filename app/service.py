@@ -1,9 +1,7 @@
 import json
 import os
 import re
-import threading
 
-import httpx
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
@@ -12,46 +10,27 @@ from app.checks import check_question, squash
 from app.llm import LLMError, Provider, chat_json_fallback
 from app.prompts import ADVICE_PROMPT, QUESTION_PROMPT, VERIFY_PROMPT
 
-OLLAMA_BASE_URL = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434/v1")
-OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "qwen3.5:9b")
-# 키가 비어 있으면 폴백 없이 Ollama만 씀
+# 키와 모델은 환경변수로만 받음. 둘 중 하나라도 비면 호출 없이 llm_unavailable로 응답함
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
 OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "")
-# qwen3.5는 호출이 쌓일수록 메모리가 늘어 일정 횟수마다 내렸다 올림 (노션 실험 기록 5)
-UNLOAD_EVERY = int(os.environ.get("OLLAMA_UNLOAD_EVERY", "10"))
 # 원문과 조금 달라도 BE가 쪽수를 찾을 수 있는 수준이라 이 결함만 허용함
 ALLOWED_ISSUES = {"evidence_edited"}
 
-ollama = Provider(name="ollama", base_url=OLLAMA_BASE_URL, model=OLLAMA_MODEL, extra_body={"reasoning_effort": "none"})
-providers = [ollama]
-if OPENAI_API_KEY and OPENAI_MODEL:
-    providers.append(Provider(name="openai", base_url="https://api.openai.com/v1", model=OPENAI_MODEL, api_key=OPENAI_API_KEY))
-
-calls = 0
-calls_lock = threading.Lock()
+# temperature는 보내지 않음. 추론 계열 모델은 기본값 외 값을 거부함
+providers = (
+    [Provider(name="openai", base_url="https://api.openai.com/v1", model=OPENAI_MODEL, api_key=OPENAI_API_KEY, temperature=None)]
+    if OPENAI_API_KEY and OPENAI_MODEL
+    else []
+)
 
 app = FastAPI()
 
 
-def unload_ollama() -> None:
-    try:
-        httpx.post(f"{OLLAMA_BASE_URL.removesuffix('/v1')}/api/generate", json={"model": OLLAMA_MODEL, "keep_alive": 0}, timeout=30)
-    except httpx.HTTPError:
-        pass
-
-
 def ask(prompt: str) -> tuple[dict, str]:
-    global calls
     try:
         result = chat_json_fallback(providers, [{"role": "user", "content": prompt}])
     except LLMError as e:
         raise HTTPException(502, detail={"code": "llm_unavailable", "message": str(e)[:300]})
-    if result["provider"] == "ollama":
-        with calls_lock:
-            calls += 1
-            unload = calls % UNLOAD_EVERY == 0
-        if unload:
-            unload_ollama()
     try:
         data = json.loads(result["content"])
     except ValueError:
@@ -146,11 +125,5 @@ def advice(req: AdviceRequest):
 
 @app.get("/internal/v1/health")
 def health():
-    try:
-        r = httpx.get(f"{OLLAMA_BASE_URL}/models", timeout=5)
-        r.raise_for_status()
-        return {"ok": True, "provider": "ollama"}
-    except httpx.HTTPError:
-        if len(providers) > 1:
-            return {"ok": True, "provider": providers[1].name}
-        return {"ok": False, "provider": None}
+    # 호출 비용이 들어 OpenAI에는 요청하지 않고 설정만 확인함
+    return {"ok": bool(providers), "provider": providers[0].name if providers else None}

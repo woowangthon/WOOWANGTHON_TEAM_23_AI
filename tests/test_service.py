@@ -18,10 +18,9 @@ def llm(monkeypatch):
         state["prompts"].append(messages[0]["content"])
         if state["fail"]:
             raise LLMError("down")
-        return {"provider": "ollama", "content": json.dumps(state["reply"], ensure_ascii=False)}
+        return {"provider": "openai", "content": json.dumps(state["reply"], ensure_ascii=False)}
 
     monkeypatch.setattr(service, "chat_json_fallback", fake)
-    monkeypatch.setattr(service, "unload_ollama", lambda: None)
     return state
 
 
@@ -40,7 +39,7 @@ def test_generate_keeps_valid_and_discards_rest(llm):
     ]}
     r = client.post("/internal/v1/generate", json={"text": SOURCE}).json()
     assert r["discarded"] == 1
-    assert r["provider"] == "ollama"
+    assert r["provider"] == "openai"
     assert [q["type"] for q in r["questions"]] == ["ox", "short"]
     assert r["questions"][0]["accepted"] == []
     assert r["questions"][1]["accepted"] == ["추상화"]
@@ -50,7 +49,7 @@ def test_generate_keeps_valid_and_discards_rest(llm):
 def test_generate_handles_broken_json(llm):
     llm["reply"] = {"items": []}
     r = client.post("/internal/v1/generate", json={"text": SOURCE}).json()
-    assert r == {"questions": [], "provider": "ollama", "discarded": 0}
+    assert r == {"questions": [], "provider": "openai", "discarded": 0}
 
 
 def test_llm_failure_returns_502(llm):
@@ -77,3 +76,11 @@ def test_advice_falls_back_when_number_changes(llm):
     r = client.post("/internal/v1/advice", json={"facts": facts}).json()
     assert r["fallback"] is True
     assert "35" in r["message"]
+
+
+def test_health_and_missing_key(monkeypatch):
+    monkeypatch.setattr(service, "providers", [])
+    assert client.get("/internal/v1/health").json() == {"ok": False, "provider": None}
+    r = client.post("/internal/v1/generate", json={"text": SOURCE})
+    assert r.status_code == 502
+    assert r.json()["error"]["code"] == "llm_unavailable"
