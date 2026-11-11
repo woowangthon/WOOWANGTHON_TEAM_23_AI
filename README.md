@@ -15,14 +15,14 @@ uv sync
 BE가 호출하는 `/internal/v1` (generate, verify, advice, health). 단답 채점은 LLM 없이 허용 답안과 글자로만 비교하므로 AI에 없음. 계약은 DOCS 레포 `api.md`를 따름.
 
 ```bash
-ollama pull qwen3.5:9b
-OLLAMA_CONTEXT_LENGTH=8192 ollama serve
+export OPENAI_API_KEY=...   # .env.example 참고, 저장소에 커밋하지 않음
+export OPENAI_MODEL=...
 uv run uvicorn app.service:app --port 8001
 ```
 
-- Ollama 기본 컨텍스트(4096)에서는 긴 입력이 오류 없이 잘려서 8192로 띄움
-- `OLLAMA_UNLOAD_EVERY`(기본 10): 호출이 쌓이면 qwen3.5 메모리가 계속 늘어 이 횟수마다 모델을 내림
-- `OPENAI_API_KEY`, `OPENAI_MODEL`: 둘 다 있을 때만 Ollama 실패 시 OpenAI로 넘어감. 지금은 비워 둠
+- 모든 호출은 OpenAI Chat Completions로 나감. 키나 모델이 비어 있으면 `health`가 `ok: false`, 나머지는 `502 llm_unavailable`
+- `health`는 OpenAI에 요청하지 않고 설정만 확인함(호출 비용 방지)
+- 업로드한 자료의 글자가 OpenAI로 전송됨
 - `generate`는 `app/checks.py` 검사에 걸린 문제를 버리고 개수를 `discarded`로 알림. 근거 문장이 원문과 조금 다른 경우(`evidence_edited`)만 통과시킴
 
 테스트 (LLM 응답을 테스트 안에서 정해 둠):
@@ -31,7 +31,9 @@ uv run uvicorn app.service:app --port 8001
 uv run pytest
 ```
 
-### 모델 비교 평가
+### 모델 비교 평가 (로컬 Ollama, 이전 선정 과정 기록)
+
+서비스는 OpenAI만 쓰고, 아래 평가 코드는 초기 모델 선정에 쓴 Ollama용이라 그대로 둠.
 
 모델은 Ollama로 받음.
 
