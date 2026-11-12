@@ -1,6 +1,7 @@
 import argparse
 import csv
 import json
+import os
 import random
 import statistics
 import time
@@ -42,7 +43,12 @@ def chunks(pdf: Path, count: int) -> list[str]:
 
 
 def run_model(model: str, samples: list[tuple[str, int, str]], base_url: str = OLLAMA_BASE_URL) -> tuple[list[dict], list[dict]]:
-    provider = Provider(name=model, base_url=base_url, model=model, extra_body=extra_body_for(model))
+    # OpenAI는 키가 필요하고, 추론 계열 모델은 temperature 기본값 외 값을 거부함
+    openai = "api.openai.com" in base_url
+    provider = Provider(
+        name=model, base_url=base_url, model=model, extra_body=extra_body_for(model),
+        api_key=os.environ.get("OPENAI_API_KEY", "") if openai else "", temperature=None if openai else 0.2,
+    )
     calls, questions = [], []
     for pdf, index, source in samples:
         prompt = QUESTION_PROMPT + source
@@ -53,7 +59,7 @@ def run_model(model: str, samples: list[tuple[str, int, str]], base_url: str = O
         except LLMError as e:
             call["error"] = str(e)[:160]
             continue
-        call.update(seconds=result["seconds"], completion_tokens=result["completion_tokens"])
+        call.update(seconds=result["seconds"], completion_tokens=result["completion_tokens"], prompt_tokens=result["prompt_tokens"])
         # 입력이 컨텍스트를 넘으면 Ollama가 조용히 잘라냄. 한글은 토큰당 약 1.5자라 3자 미만이면 잘린 것으로 봄
         call["truncated"] = result["prompt_tokens"] < len(prompt) / 3
         try:
@@ -150,7 +156,8 @@ def main() -> None:
         calls, questions = run_model(model, samples, url or args.base_url)
         all_calls += calls
         all_questions += questions
-        print(f"{model}: 호출 {len(calls)}, 문제 {len(questions)}", flush=True)
+        tokens = (sum(c.get("prompt_tokens", 0) for c in calls), sum(c.get("completion_tokens", 0) for c in calls))
+        print(f"{model}: 호출 {len(calls)}, 문제 {len(questions)}, 토큰 입력 {tokens[0]} 출력 {tokens[1]}", flush=True)
 
     with open(out / "questions.jsonl", "w", encoding="utf-8") as f:
         for q in all_questions:
