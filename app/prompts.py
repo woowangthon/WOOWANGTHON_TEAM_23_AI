@@ -1,5 +1,5 @@
 QUESTION_PROMPT = """다음은 사용자가 공부하려는 학습 자료의 일부임. 이 내용만 근거로 문제를 만들 것.
-OX 문제 1개와 단답형 문제 1개를 JSON으로만 출력함.
+OX 문제 3개와 단답형 문제 2개를 JSON으로만 출력함. 서로 다른 내용을 묻고, 같은 문장이나 같은 개념을 반복해 묻지 않음.
 
 규칙
 - OX 문제는 참인지 거짓인지 가릴 수 있는 서술문으로 쓰고, 물음표를 쓰지 않음
@@ -10,10 +10,24 @@ OX 문제 1개와 단답형 문제 1개를 JSON으로만 출력함.
 - accepted에는 정답과 같은 대상을 가리키는 다른 이름을 모두 적음. 정식 명칭, 줄임말, 다른 표기, 영어 이름 등. 예: 정답이 헌법이면 대한민국헌법, 한국 헌법
 - evidence에는 자료의 한 문장을 글자 그대로 복사해 넣음
 
-형식: {"questions":[{"type":"ox","question":"","answer":"O","evidence":""},{"type":"short","question":"","answer":"","accepted":[""],"evidence":""}]}
+형식: {"questions":[{"type":"ox","question":"","answer":"O","evidence":""},{"type":"short","question":"","answer":"","accepted":[""],"evidence":""}, ...]} (questions 배열에 OX 3개와 단답형 2개)
 
 자료:
 """
+
+AVOID_BLOCK = """이미 낸 문제임. 이 문제들과 같은 내용이나 같은 개념을 묻지 않고, 자료의 다른 내용으로 새 문제를 만들 것.
+{items}
+
+"""
+
+
+def question_prompt(avoid: list[str]) -> str:
+    """이미 낸 문제가 있으면 자료 앞에 붙여 같은 내용을 다시 묻지 않게 함"""
+    if not avoid:
+        return QUESTION_PROMPT
+    block = AVOID_BLOCK.format(items="\n".join(f"- {q}" for q in avoid))
+    return QUESTION_PROMPT.replace("자료:\n", block + "자료:\n")
+
 
 VERIFY_PROMPT = """다음 자료만 보고 문제를 풀 것. 자료로 답을 정할 수 없으면 answer를 빈 문자열로 둠.
 OX 문제는 "O" 또는 "X"로, 단답형은 짧은 용어로 답함. JSON으로만 출력함.
