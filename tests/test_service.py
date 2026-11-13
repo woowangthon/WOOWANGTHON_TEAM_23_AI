@@ -84,3 +84,22 @@ def test_health_and_missing_key(monkeypatch):
     r = client.post("/internal/v1/generate", json={"text": SOURCE})
     assert r.status_code == 502
     assert r.json()["error"]["code"] == "llm_unavailable"
+
+
+def test_avoid_list_goes_into_prompt_and_duplicates_are_dropped(llm):
+    llm["reply"] = {"questions": [
+        {"type": "ox", "question": "운영체제는 응용 프로그램과 하드웨어 사이의 인터페이스 역할을 한다.", "answer": "O",
+         "evidence": "운영체제는 응용 프로그램과 하드웨어 사이의 인터페이스 역할을 한다."},
+        {"type": "short", "question": "장치 드라이버의 주된 설계 목적은 무엇인가?", "answer": "추상화", "accepted": ["추상화"],
+         "evidence": "장치 드라이버의 주된 설계 목적은 추상화이다."},
+    ]}
+    r = client.post("/internal/v1/generate", json={
+        "text": SOURCE, "avoid": ["운영체제는 응용 프로그램과 하드웨어 사이의 인터페이스 역할을 한다.", " "],
+    }).json()
+    assert [q["type"] for q in r["questions"]] == ["short"]
+    assert r["discarded"] == 1
+    prompt = llm["prompts"][0]
+    assert "이미 낸 문제" in prompt and "- 운영체제는 응용 프로그램과 하드웨어 사이의 인터페이스 역할을 한다." in prompt
+    assert prompt.index("이미 낸 문제") < prompt.index(SOURCE)
+    client.post("/internal/v1/generate", json={"text": SOURCE})
+    assert "이미 낸 문제" not in llm["prompts"][1]

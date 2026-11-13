@@ -8,7 +8,7 @@ from pydantic import BaseModel
 
 from app.checks import check_question, squash
 from app.llm import LLMError, Provider, chat_json_fallback
-from app.prompts import ADVICE_PROMPT, QUESTION_PROMPT, VERIFY_PROMPT
+from app.prompts import ADVICE_PROMPT, VERIFY_PROMPT, question_prompt
 
 # 키와 모델은 환경변수로만 받음. 둘 중 하나라도 비면 호출 없이 llm_unavailable로 응답함
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
@@ -44,19 +44,30 @@ def http_error(_, e: HTTPException):
     return JSONResponse({"error": detail}, status_code=e.status_code)
 
 
+MAX_AVOID = 30
+
+
 class GenerateRequest(BaseModel):
     text: str
+    # 이 자료로 이미 낸 문제. 같은 내용을 다시 묻지 않기 위해 프롬프트에 넣음
+    avoid: list[str] = []
 
 
 @app.post("/internal/v1/generate")
 def generate(req: GenerateRequest):
-    data, provider = ask(QUESTION_PROMPT + req.text)
+    avoid = [a.strip()[:200] for a in req.avoid if a.strip()][:MAX_AVOID]
+    data, provider = ask(question_prompt(avoid) + req.text)
     items = data.get("questions")
     items = [q for q in items if isinstance(q, dict)] if isinstance(items, list) else []
     kept = []
+    seen = {squash(a) for a in avoid}
     for q in items:
         if not str(q.get("question", "")).strip() or set(check_question(q, req.text)) - ALLOWED_ISSUES:
             continue
+        # 프롬프트로 막아도 같은 문제가 나올 수 있어 글자까지 같으면 버림
+        if squash(str(q["question"])) in seen:
+            continue
+        seen.add(squash(str(q["question"])))
         kept.append({
             "type": q["type"],
             "question": str(q["question"]).strip(),
