@@ -68,6 +68,16 @@ def test_verify_compares_answer(llm):
     assert client.post("/internal/v1/verify", json={"question": q, "source": SOURCE}).json()["supported"] is False
 
 
+def test_advice_falls_back_when_number_changes(llm):
+    facts = {"기준": "어제", "쇼츠 시청(분)": 38, "밤 12시 이후 비중(%)": 42}
+    llm["reply"] = {"message": "어제 쇼츠 38분 중 42%가 밤 12시 이후였어. 오늘은 조금 일찍 자 볼까?"}
+    assert client.post("/internal/v1/advice", json={"facts": facts}).json()["fallback"] is False
+    llm["reply"] = {"message": "어제 쇼츠를 50분이나 봤네."}
+    r = client.post("/internal/v1/advice", json={"facts": facts}).json()
+    assert r["fallback"] is True
+    assert "38" in r["message"]
+
+
 def test_health_and_missing_key(monkeypatch):
     monkeypatch.setattr(service, "providers", [])
     assert client.get("/internal/v1/health").json() == {"ok": False, "provider": None}

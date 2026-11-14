@@ -12,7 +12,7 @@ uv sync
 
 ### 내부 API 서비스
 
-BE가 호출하는 `/internal/v1` (generate, verify, health). 단답 채점은 LLM 없이 허용 답안과 글자로만 비교하므로 AI에 없음. 계약은 DOCS 레포 `api.md`를 따름.
+BE가 호출하는 `/internal/v1` (generate, verify, advice, health). 단답 채점은 LLM 없이 허용 답안과 글자로만 비교하므로 AI에 없음. 계약은 DOCS 레포 `api.md`를 따름.
 
 ```bash
 export OPENAI_API_KEY=...   # .env.example 참고, 저장소에 커밋하지 않음
