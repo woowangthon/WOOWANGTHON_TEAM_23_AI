@@ -13,6 +13,7 @@ from pypdf import PdfReader
 from app.llm import LLMError, Provider, chat_json
 from app.prompts import QUESTION_PROMPT
 from app.checks import check_question
+from app.service import pick_ox
 
 CHUNK_CHARS = 2000
 OLLAMA_BASE_URL = "http://localhost:11434/v1"
@@ -70,6 +71,8 @@ def run_model(model: str, samples: list[tuple[str, int, str]], base_url: str = O
         for item in items:
             if not isinstance(item, dict):
                 continue
+            if item.get("type") == "ox" and ("true" in item or "false" in item):
+                item = pick_ox(item)
             questions.append({
                 "model": model, "pdf": pdf, "chunk": index, "type": item.get("type"),
                 "question": item.get("question", ""), "answer": item.get("answer", ""),
@@ -95,7 +98,7 @@ def summarize(models: list[str], calls: list[dict], questions: list[dict]) -> st
         lines.append(
             f"| {model} | {len(c)} | {sum(bool(x['error']) for x in c)} | "
             f"{sum(not x['json_ok'] and not x['error'] for x in c)} | {sum(x['truncated'] for x in c)} | "
-            f"{len(q)}/{2 * sum(x['json_ok'] for x in c)} | "
+            f"{len(q)}/{5 * sum(x['json_ok'] for x in c)} | "
             f"{median_seconds:.1f} | {median_speed:.1f} |"
         )
     lines += ["", "문제 결함 비율(문제 수 대비)", "", "| 모델 | " + " | ".join(ISSUES) + " | 결함 없음 |", "|---" * (len(ISSUES) + 2) + "|"]

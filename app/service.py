@@ -1,6 +1,6 @@
 import json
 import os
-import re
+import random
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
@@ -8,7 +8,7 @@ from pydantic import BaseModel
 
 from app.checks import check_question, squash
 from app.llm import LLMError, Provider, chat_json_fallback
-from app.prompts import ADVICE_PROMPT, VERIFY_PROMPT, question_prompt
+from app.prompts import VERIFY_PROMPT, question_prompt
 
 # 키와 모델은 환경변수로만 받음. 둘 중 하나라도 비면 호출 없이 llm_unavailable로 응답함
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
@@ -47,6 +47,16 @@ def http_error(_, e: HTTPException):
 MAX_AVOID = 30
 
 
+def pick_ox(q: dict) -> dict:
+    """모델이 정답을 O로 몰아 내서, 참·거짓 문장을 함께 받아 하나를 무작위로 고름"""
+    true, false = str(q.get("true", "")).strip(), str(q.get("false", "")).strip()
+    if not true or not false or squash(true) == squash(false):
+        return {**q, "question": "", "answer": ""}
+    if random.random() < 0.5:
+        return {**q, "question": true, "answer": "O"}
+    return {**q, "question": false, "answer": "X"}
+
+
 class GenerateRequest(BaseModel):
     text: str
     # 이 자료로 이미 낸 문제. 같은 내용을 다시 묻지 않기 위해 프롬프트에 넣음
@@ -62,6 +72,8 @@ def generate(req: GenerateRequest):
     kept = []
     seen = {squash(a) for a in avoid}
     for q in items:
+        if q.get("type") == "ox" and ("true" in q or "false" in q):
+            q = pick_ox(q)
         if not str(q.get("question", "")).strip() or set(check_question(q, req.text)) - ALLOWED_ISSUES:
             continue
         # 프롬프트로 막아도 같은 문제가 나올 수 있어 글자까지 같으면 버림
@@ -107,31 +119,6 @@ def verify(req: VerifyRequest):
     supported = bool(solved) and matches(solved, q.answer, q.accepted)
     reason = str(data.get("reason", "")).strip()
     return {"supported": supported, "reason": f"다시 푼 답: {solved or '없음'}. {reason}".strip()}
-
-
-
-NUMBER = re.compile(r"\d+(?:\.\d+)?")
-
-
-class AdviceRequest(BaseModel):
-    facts: dict
-    suggestion: dict | None = None
-
-
-def fallback_message(facts: dict) -> str:
-    return ", ".join(f"{k} {v}" for k, v in facts.items())
-
-
-@app.post("/internal/v1/advice")
-def advice(req: AdviceRequest):
-    facts_text = json.dumps(req.facts, ensure_ascii=False)
-    data, _ = ask(ADVICE_PROMPT.format(facts=facts_text, suggestion=json.dumps(req.suggestion or {}, ensure_ascii=False)))
-    message = str(data.get("message", "")).strip()
-    allowed = set(NUMBER.findall(facts_text + json.dumps(req.suggestion or {}, ensure_ascii=False)))
-    # 입력에 없는 숫자가 문장에 있으면 버리고 수치만 나열함
-    if not message or not set(NUMBER.findall(message)) <= allowed:
-        return {"message": fallback_message(req.facts), "fallback": True}
-    return {"message": message, "fallback": False}
 
 
 @app.get("/internal/v1/health")
