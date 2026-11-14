@@ -130,7 +130,10 @@ class AdviceRequest(BaseModel):
 
 
 def fallback_message(facts: dict) -> str:
-    return ", ".join(f"{k} {v}" for k, v in facts.items())
+    """문장을 쓰지 못했을 때 사실을 그대로 늘어놓음. 예: 어제 푼 카드 12, 맞힌 카드 10"""
+    rest = {k: v for k, v in facts.items() if k != "기준"}
+    body = ", ".join(f"{k} {v}" for k, v in rest.items())
+    return f"{facts['기준']} {body}" if "기준" in facts else body
 
 
 @app.post("/internal/v1/advice")
