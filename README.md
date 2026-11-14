@@ -12,7 +12,7 @@ uv sync
 
 ### 내부 API 서비스
 
-BE가 호출하는 `/internal/v1` (generate, verify, advice, health). 단답 채점은 LLM 없이 허용 답안과 글자로만 비교하므로 AI에 없음. 계약은 DOCS 레포 `api.md`를 따름.
+BE가 호출하는 `/internal/v1` (generate, verify, health). 단답 채점은 LLM 없이 허용 답안과 글자로만 비교하므로 AI에 없음. 계약은 DOCS 레포 `api.md`를 따름.
 
 ```bash
 export OPENAI_API_KEY=...   # .env.example 참고, 저장소에 커밋하지 않음
@@ -24,6 +24,7 @@ uv run uvicorn app.service:app --port 8001
 - `health`는 OpenAI에 요청하지 않고 설정만 확인함(호출 비용 방지)
 - 업로드한 자료의 글자가 OpenAI로 전송됨
 - `generate`는 조각마다 OX 3개와 단답 2개를 요청함. `app/checks.py` 검사에 걸린 문제를 버리고 개수를 `discarded`로 알림. 근거 문장이 원문과 조금 다른 경우(`evidence_edited`)만 통과시킴
+- OX는 모델이 정답을 O로 몰아 내는 경향이 있어(평가에서 O 69, X 12) 참 문장과 사실 하나를 바꾼 거짓 문장을 함께 받고, 서버가 둘 중 하나를 무작위로 골라 정답 O/X를 정함
 - `generate`의 `avoid`(선택): 이 자료로 이미 낸 문제 목록. 프롬프트에 넣어 같은 내용을 피하게 하고, 글자까지 같은 문제는 응답에서 뺌. BE가 새 문제를 채울 때 씀
 
 테스트 (LLM 응답을 테스트 안에서 정해 둠):

@@ -68,16 +68,6 @@ def test_verify_compares_answer(llm):
     assert client.post("/internal/v1/verify", json={"question": q, "source": SOURCE}).json()["supported"] is False
 
 
-def test_advice_falls_back_when_number_changes(llm):
-    facts = {"밤 12시 이후 시청 비중": 0.42, "연속 시청 최장(분)": 35}
-    llm["reply"] = {"message": "어제는 35분 연속으로 봤네. 밤에는 문제를 줄여 볼까?"}
-    assert client.post("/internal/v1/advice", json={"facts": facts}).json()["fallback"] is False
-    llm["reply"] = {"message": "어제는 40분 연속으로 봤네."}
-    r = client.post("/internal/v1/advice", json={"facts": facts}).json()
-    assert r["fallback"] is True
-    assert "35" in r["message"]
-
-
 def test_health_and_missing_key(monkeypatch):
     monkeypatch.setattr(service, "providers", [])
     assert client.get("/internal/v1/health").json() == {"ok": False, "provider": None}
@@ -103,3 +93,27 @@ def test_avoid_list_goes_into_prompt_and_duplicates_are_dropped(llm):
     assert prompt.index("이미 낸 문제") < prompt.index(SOURCE)
     client.post("/internal/v1/generate", json={"text": SOURCE})
     assert "이미 낸 문제" not in llm["prompts"][1]
+
+
+def test_ox_pair_becomes_true_or_false_question(llm, monkeypatch):
+    pair = {"type": "ox", "true": "운영체제는 응용 프로그램과 하드웨어 사이의 인터페이스 역할을 한다.",
+            "false": "운영체제는 응용 프로그램과 사용자 사이의 인터페이스 역할을 한다.",
+            "evidence": "운영체제는 응용 프로그램과 하드웨어 사이의 인터페이스 역할을 한다."}
+    llm["reply"] = {"questions": [pair]}
+    monkeypatch.setattr(service.random, "random", lambda: 0.1)
+    q = client.post("/internal/v1/generate", json={"text": SOURCE}).json()["questions"][0]
+    assert (q["question"], q["answer"]) == (pair["true"], "O")
+    monkeypatch.setattr(service.random, "random", lambda: 0.9)
+    q = client.post("/internal/v1/generate", json={"text": SOURCE}).json()["questions"][0]
+    assert (q["question"], q["answer"]) == (pair["false"], "X")
+    assert "true" not in q and "false" not in q
+
+
+def test_ox_pair_without_real_change_is_discarded(llm):
+    same = "운영체제는 응용 프로그램과 하드웨어 사이의 인터페이스 역할을 한다."
+    llm["reply"] = {"questions": [
+        {"type": "ox", "true": same, "false": same + " ", "evidence": same},
+        {"type": "ox", "true": same, "false": "", "evidence": same},
+    ]}
+    r = client.post("/internal/v1/generate", json={"text": SOURCE}).json()
+    assert r["questions"] == [] and r["discarded"] == 2
