@@ -1,6 +1,7 @@
 import json
 import os
 import random
+import re
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
@@ -8,7 +9,7 @@ from pydantic import BaseModel
 
 from app.checks import check_question, squash
 from app.llm import LLMError, Provider, chat_json_fallback
-from app.prompts import VERIFY_PROMPT, question_prompt
+from app.prompts import ADVICE_PROMPT, VERIFY_PROMPT, question_prompt
 
 # 키와 모델은 환경변수로만 받음. 둘 중 하나라도 비면 호출 없이 llm_unavailable로 응답함
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
@@ -119,6 +120,29 @@ def verify(req: VerifyRequest):
     supported = bool(solved) and matches(solved, q.answer, q.accepted)
     reason = str(data.get("reason", "")).strip()
     return {"supported": supported, "reason": f"다시 푼 답: {solved or '없음'}. {reason}".strip()}
+
+
+NUMBER = re.compile(r"\d+(?:\.\d+)?")
+
+
+class AdviceRequest(BaseModel):
+    facts: dict
+
+
+def fallback_message(facts: dict) -> str:
+    return ", ".join(f"{k} {v}" for k, v in facts.items())
+
+
+@app.post("/internal/v1/advice")
+def advice(req: AdviceRequest):
+    """BE 규칙이 고른 사실을 문장으로만 바꿈. 무엇을 말할지는 AI가 정하지 않음"""
+    facts_text = json.dumps(req.facts, ensure_ascii=False)
+    data, _ = ask(ADVICE_PROMPT.format(facts=facts_text))
+    message = str(data.get("message", "")).strip()
+    # 입력에 없는 숫자가 문장에 있으면 버리고 수치만 나열함
+    if not message or not set(NUMBER.findall(message)) <= set(NUMBER.findall(facts_text)):
+        return {"message": fallback_message(req.facts), "fallback": True}
+    return {"message": message, "fallback": False}
 
 
 @app.get("/internal/v1/health")
